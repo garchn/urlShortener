@@ -65,10 +65,10 @@ def decode():
     visits = json.loads(visits)
 
     now = (datetime.utcnow()).isoformat()
-    # Uncommenting this to simulate a visit from 2 weeks ago
-    # now = (datetime.utcnow() - timedelta(weeks=2)).isoformat()
     # Simulating 2 days ago
     # now = (datetime.utcnow() - timedelta(days=2)).isoformat()
+    # Uncommenting this to simulate a visit from 2 weeks ago
+    # now = (datetime.utcnow() - timedelta(weeks=2)).isoformat()
 
     visits.append(now)
     urlStats[short_url] = json.dumps(visits)
@@ -100,9 +100,6 @@ def stats():
 
     for dt in visits:
         dt = datetime.fromisoformat(dt)
-        print('dt', dt)
-        print('24h', past24h)
-        print('7d', past7d)
         if dt > past7d:
             visits_past_week += 1
         if dt > past24h:
