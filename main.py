@@ -1,89 +1,115 @@
-# The challenge is to build a HTTP-based RESTful API for managing Short URLs and redirecting clients similar to bit.ly or goo.gl. Be thoughtful that the system must eventually support millions of short urls. Please include a README with documentation on how to build, and run and test the system. Clearly state all assumptions and design decisions in the README.
-# A Short Url:
-#
-# 1. Has one long url
-#
-# 2. Permanent; Once created
-#
-# 3. Is Unique; If a long url is added twice it should result in two different short urls.
-#
-# 4. Not easily discoverable; incrementing an already existing short url should have a low probability of finding a working short url.
-#
-# Your solution must support:
-#
-# 1. Generating a short url from a long url
-#
-# 2. Redirecting a short url to a long url within 10 ms.
-#
-# 3. Listing the number of times a short url has been accessed in the last 24 hours, past week and all time.
-#
-# 4. Persistence (data must survive computer restarts)
-#
-# Shortcuts
-#
-# 1. No authentication is required
-#
-# 2. No html, web UI is required
-#
-# 3. Transport/Serialization format is your choice, but the solution should be testable via curl
-
 from flask import Flask, json, jsonify, request, g, make_response
 from sqlitedict import SqliteDict
 import webbrowser
-from hashlib import (md5)
-from base62 import b62encode
-
-def encodeUrl(url):
-    return b64encode(md5(url.encode()).digest())
+import string
+import random
+from datetime import datetime, timedelta
+from bisect import bisect
 
 api = Flask(__name__)
-LONG_TO_SHORT_FILE = 'long2short.sqlite'
+BASE62 = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 SHORT_TO_LONG_FILE = 'short2long.sqlite'
+URL_STATS_FILE = 'urlStats.sqlite'
 
-long2short = SqliteDict(LONG_TO_SHORT_FILE)
 short2long = SqliteDict(SHORT_TO_LONG_FILE)
+urlStats = SqliteDict(URL_STATS_FILE)
 
 @api.route('/encode', methods=['POST'])
 def encode():
     data = request.get_json()
-    print(data['longUrl'])
-    url = data['longUrl']
+    long_url = data['longUrl']
 
-    if not isinstance(url, str):
-        resp = make_response("Invalid URL", 400)
+    if not isinstance(long_url, str):
+        resp = make_response("Invalid URL Formatting", 400)
         return resp
 
-    # if url not in long2short:
-    long2short[url] = encodeUrl(url)
+    # using base62 and a shortUrl of 7 characters allows us to support 62^7 ~= 3.5 trillion URLs.
+    def randomBase62IdGen(size=7, chars = string.ascii_uppercase + string.ascii_lowercase + string.digits):
+        return ''.join(random.choice(chars) for _ in range(size))
 
-    short_url = long2short[url]
-    short2long[short_url] = url
-    print(short_url, type(short_url), str(short_url))
-    #return jsonify({"shortUrl": short_url})
+    # simply rehashing on hash collision because with URLs on the scale of millions, collisions will be unlikely.
+    short_url = randomBase62IdGen()
+    while short_url in short2long:
+        short_url = randomBase62IdGen()
 
+    short2long[short_url] = long_url
+    short2long.commit()
+    return jsonify({"shortUrl": short_url})
 
 @api.route('/decode', methods=['GET'])
 def decode():
     data = request.get_json()
-    url = data['shortUrl']
+    short_url = data['shortUrl']
 
-    if not isinstance(url, str):
+    if not isinstance(short_url, str):
         resp = make_response("Invalid URL", 400)
         return resp
 
-    if url not in short2long:
-        resp = make_response("URL not found", 404)
+    for c in short_url:
+        if c not in BASE62:
+            resp = make_response("Invalid URL: shortUrl is not of base 62 format.", 400)
+            return resp
+
+    if len(short_url) != 7:
+        resp = make_response("Invalid URL: shortUrl must be 7 characters long.", 400)
         return resp
 
-    # url = 'https://codefather.tech/blog/'
-    # webbrowser.open(url)
-    return jsonify({"longUrl": short2long[url]})
+    if short_url not in short2long:
+        resp = make_response("Short URL not found", 404)
+        return resp
+
+    long_url = short2long[short_url]
+    webbrowser.open(long_url)
+
+    visits = urlStats.get(short_url, json.dumps([]))
+    visits = json.loads(visits)
+
+    now = (datetime.utcnow()).isoformat()
+    # Uncommenting this to simulate a visit from 2 weeks ago
+    # now = (datetime.utcnow() - timedelta(weeks=2)).isoformat()
+    # Simulating 2 days ago
+    # now = (datetime.utcnow() - timedelta(days=2)).isoformat()
+
+    visits.append(now)
+    urlStats[short_url] = json.dumps(visits)
+    urlStats.commit()
+
+    return jsonify({"longUrl": long_url})
 
 @api.route('/stats', methods=['GET'])
-def stats(url):
-    return json.dumps()
+def stats():
+    data = request.get_json()
+    short_url = data['shortUrl']
+
+    for c in short_url:
+        if c not in BASE62:
+            resp = make_response("Invalid URL: shortUrl is not of base 62 format.", 400)
+            return resp
+
+    if len(short_url) != 7:
+        resp = make_response("Invalid URL: shortUrl must be 7 characters long.", 400)
+        return resp
+
+    visits = urlStats.get(short_url, json.dumps([]))
+    visits = json.loads(visits)
+    now = datetime.now()
+    past24h = now - timedelta(days=1)
+    past7d = now - timedelta(weeks=1)
+
+    visits_past_day, visits_past_week = 0, 0
+
+    for dt in visits:
+        dt = datetime.fromisoformat(dt)
+        print('dt', dt)
+        print('24h', past24h)
+        print('7d', past7d)
+        if dt > past7d:
+            visits_past_week += 1
+        if dt > past24h:
+            visits_past_day += 1
+
+    return jsonify({"shortUrl": short_url, "visits": len(visits), "visits_within_past_day": visits_past_day, "visits_within_past_week": visits_past_week})
 
 
 if __name__ == '__main__':
-
     api.run()
