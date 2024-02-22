@@ -1,6 +1,10 @@
 **Simple Python URL Shortener**
 --------------------------------
 
+**URL Persistence** - data is stored in SqliteDict DB, which will persist short URL to long URL mapping between sessions.
+**Capacity** - Short URL is a 7 character string in base62, so maximum capacity would be 62^7 ~= 3.5 trillion URLs. This should handle millions of URLs with minimal hash collisions easily.
+**Uniqueness** - Encode endpoint will return two different short URLs if hit twice consecutively. These URLs are randomized so the probability of being discovered is low. Each short URL is also unique and will ever be generated once.
+
 Instructions: To run the server, simply run main.py. Send requests to the port address followed with one of the 3 endpoints below:
 
 **[POST] /encode** <br />
