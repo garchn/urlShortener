@@ -1,7 +1,7 @@
 **Simple Python URL Shortener**
 --------------------------------
 
-Instructions: To run the server, simply run main.py. Send requests to the following 3 endpoints below:
+Instructions: To run the server, simply run main.py. Send requests to the port address followed with one of the 3 endpoints below:
 
 **[POST] /encode** <br />
 Enter a URL, receive a short URL string as a response. Short URL will be a 7 character long string in base62.
